@@ -4,6 +4,7 @@ export const Constants = {
     app: {
         name: 'Copilot',
         updateCheckIntervalSeconds: 60 * 5,
+        CONNECTION_ALERT_ID: 'connection-alert',
     },
     msal: {
         method: 'redirect', // 'redirect' | 'popup'
@@ -15,8 +16,9 @@ export const Constants = {
             cacheLocation: 'localStorage',
             storeAuthStateInCookie: false,
         },
-        semanticKernelScopes: ['openid', 'offline_access', 'profile']
-            .concat(process.env.REACT_APP_AAD_API_SCOPE as string ? [process.env.REACT_APP_AAD_API_SCOPE as string] : []),
+        semanticKernelScopes: ['openid', 'offline_access', 'profile'].concat(
+            (process.env.REACT_APP_AAD_API_SCOPE as string) ? [process.env.REACT_APP_AAD_API_SCOPE as string] : [],
+        ),
         // MS Graph scopes required for loading user information
         msGraphAppScopes: ['User.ReadBasic.All'],
     },
@@ -39,6 +41,8 @@ export const Constants = {
         },
         // Reserved context variable names
         reservedWords: ['server_url', 'server-url'],
+        // Flag used to indicate that the variable is unknown in plan preview
+        UNKNOWN_VARIABLE_FLAG: '$???',
     },
     adoScopes: ['vso.work'],
     BATCH_REQUEST_LIMIT: 20,
@@ -50,4 +54,5 @@ export const Constants = {
         MANIFEST_PATH: '/.well-known/ai-plugin.json',
     },
     KEYSTROKE_DEBOUNCE_TIME_MS: 250,
+    STEPWISE_RESULT_NOT_FOUND_REGEX: /(Result not found, review _stepsTaken to see what happened\.)\s+(\[{.*}])/g,
 };

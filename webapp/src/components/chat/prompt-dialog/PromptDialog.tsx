@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import {
+    Body1Strong,
     Button,
     Dialog,
     DialogActions,
@@ -14,14 +15,22 @@ import {
     Tooltip,
     makeStyles,
     shorthands,
+    tokens,
 } from '@fluentui/react-components';
 import { Info16Regular } from '@fluentui/react-icons';
 import React from 'react';
+import { Constants } from '../../../Constants';
+import { BotResponsePrompt, PromptSectionsNameMap } from '../../../libs/models/BotResponsePrompt';
 import { IChatMessage } from '../../../libs/models/ChatMessage';
 import { useDialogClasses } from '../../../styles';
 import { TokenUsageGraph } from '../../token-usage/TokenUsageGraph';
+import { formatParagraphTextContent } from '../../utils/TextUtils';
+import { StepwiseThoughtProcess } from './stepwise-planner/StepwiseThoughtProcess';
 
 const useClasses = makeStyles({
+    prompt: {
+        marginTop: tokens.spacingHorizontalS,
+    },
     infoButton: {
         ...shorthands.padding(0),
         ...shorthands.margin(0),
@@ -38,6 +47,31 @@ export const PromptDialog: React.FC<IPromptDialogProps> = ({ message }) => {
     const classes = useClasses();
     const dialogClasses = useDialogClasses();
 
+    let prompt: string | BotResponsePrompt;
+    try {
+        prompt = JSON.parse(message.prompt ?? '{}') as BotResponsePrompt;
+    } catch (e) {
+        prompt = message.prompt ?? '';
+    }
+    let promptDetails;
+    if (typeof prompt === 'string') {
+        promptDetails = prompt.split('\n').map((paragraph, idx) => <p key={`prompt-details-${idx}`}>{paragraph}</p>);
+    } else {
+        promptDetails = Object.entries(prompt).map(([key, value]) => {
+            const isStepwiseThoughtProcess = Constants.STEPWISE_RESULT_NOT_FOUND_REGEX.test(value as string);
+            return value ? (
+                <div className={classes.prompt} key={`prompt-details-${key}`}>
+                    <Body1Strong>{PromptSectionsNameMap[key]}</Body1Strong>
+                    {isStepwiseThoughtProcess ? (
+                        <StepwiseThoughtProcess stepwiseResult={value as string} />
+                    ) : (
+                        formatParagraphTextContent(value as string)
+                    )}
+                </div>
+            ) : null;
+        });
+    }
+
     return (
         <Dialog>
             <DialogTrigger disableButtonEnhancement>
@@ -50,9 +84,7 @@ export const PromptDialog: React.FC<IPromptDialogProps> = ({ message }) => {
                     <DialogTitle>Prompt</DialogTitle>
                     <DialogContent>
                         <TokenUsageGraph promptView tokenUsage={message.tokenUsage ?? {}} />
-                        {message.prompt
-                            ?.split('\n')
-                            .map((paragraph, idx) => <p key={`prompt-details-${idx}`}>{paragraph}</p>)}
+                        {promptDetails}
                     </DialogContent>
                     <DialogActions position="start" className={dialogClasses.footer}>
                         <Label size="small" color="brand">
