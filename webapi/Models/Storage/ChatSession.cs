@@ -14,19 +14,16 @@ public class ChatSession : IStorageEntity
     /// <summary>
     /// Chat ID that is persistent and unique.
     /// </summary>
-    [JsonPropertyName("id")]
     public string Id { get; set; }
 
     /// <summary>
     /// Title of the chat.
     /// </summary>
-    [JsonPropertyName("title")]
     public string Title { get; set; }
 
     /// <summary>
     /// Timestamp of the chat creation.
     /// </summary>
-    [JsonPropertyName("createdOn")]
     public DateTimeOffset CreatedOn { get; set; }
 
     /// <summary>
@@ -40,6 +37,12 @@ public class ChatSession : IStorageEntity
     /// the relevance threshold of long term memory and increasing the threshold score of working memory.
     /// </summary>
     public double MemoryBalance { get; set; } = 0.5;
+
+    /// <summary>
+    /// The partition key for the session.
+    /// </summary>
+    [JsonIgnore]
+    public string Partition => this.Id;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChatSession"/> class.

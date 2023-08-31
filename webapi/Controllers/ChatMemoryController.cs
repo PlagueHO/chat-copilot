@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using CopilotChat.WebApi.Auth;
 using CopilotChat.WebApi.Options;
 using CopilotChat.WebApi.Skills.ChatSkills;
 using CopilotChat.WebApi.Storage;
@@ -20,7 +21,6 @@ namespace CopilotChat.WebApi.Controllers;
 /// Controller for retrieving semantic memory data of chat sessions.
 /// </summary>
 [ApiController]
-[Authorize]
 public class ChatMemoryController : ControllerBase
 {
     private readonly ILogger<ChatMemoryController> _logger;
@@ -55,6 +55,7 @@ public class ChatMemoryController : ControllerBase
     [Route("chatMemory/{chatId:guid}/{memoryName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [Authorize(Policy = AuthPolicyName.RequireChatParticipant)]
     public async Task<IActionResult> GetSemanticMemoriesAsync(
         [FromServices] ISemanticTextMemory semanticTextMemory,
         [FromRoute] string chatId,
@@ -66,7 +67,7 @@ public class ChatMemoryController : ControllerBase
         var sanitizedMemoryName = memoryName.Replace(Environment.NewLine, string.Empty, StringComparison.Ordinal);
 
         // Make sure the chat session exists.
-        if (!await this._chatSessionRepository.TryFindByIdAsync(chatId, v => _ = v))
+        if (!await this._chatSessionRepository.TryFindByIdAsync(chatId))
         {
             this._logger.LogWarning("Chat session: {0} does not exist.", sanitizedChatId);
             return this.BadRequest($"Chat session: {sanitizedChatId} does not exist.");

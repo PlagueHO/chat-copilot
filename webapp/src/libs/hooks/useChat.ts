@@ -4,11 +4,12 @@ import { useMsal } from '@azure/msal-react';
 import { Constants } from '../../Constants';
 import { useAppDispatch, useAppSelector } from '../../redux/app/hooks';
 import { RootState } from '../../redux/app/store';
-import { addAlert, updateTokenUsage } from '../../redux/features/app/appSlice';
+import { addAlert, toggleFeatureState, updateTokenUsage } from '../../redux/features/app/appSlice';
 import { ChatState } from '../../redux/features/conversations/ChatState';
 import { Conversations } from '../../redux/features/conversations/ConversationsState';
 import {
     addConversation,
+    deleteConversation,
     setConversations,
     setSelectedConversation,
     updateBotResponseStatus,
@@ -17,7 +18,7 @@ import { Plugin } from '../../redux/features/plugins/PluginsState';
 import { AuthHelper } from '../auth/AuthHelper';
 import { AlertType } from '../models/AlertType';
 import { Bot } from '../models/Bot';
-import { ChatMessageType } from '../models/ChatMessage';
+import { AuthorRoles, ChatMessageType } from '../models/ChatMessage';
 import { IChatSession, ICreateChatSessionResponse } from '../models/ChatSession';
 import { IChatUser } from '../models/ChatUser';
 import { TokenUsage } from '../models/TokenUsage';
@@ -31,6 +32,7 @@ import botIcon2 from '../../assets/bot-icons/bot-icon-2.png';
 import botIcon3 from '../../assets/bot-icons/bot-icon-3.png';
 import botIcon4 from '../../assets/bot-icons/bot-icon-4.png';
 import botIcon5 from '../../assets/bot-icons/bot-icon-5.png';
+import { FeatureKeys } from '../../redux/features/app/AppState';
 
 export interface GetResponseOptions {
     messageType: ChatMessageType;
@@ -43,7 +45,7 @@ export const useChat = () => {
     const dispatch = useAppDispatch();
     const { instance, inProgress } = useMsal();
     const { conversations } = useAppSelector((state: RootState) => state.conversations);
-    const { activeUserInfo } = useAppSelector((state: RootState) => state.app);
+    const { activeUserInfo, features } = useAppSelector((state: RootState) => state.app);
 
     const botService = new BotService(process.env.REACT_APP_BACKEND_URI as string);
     const chatService = new ChatService(process.env.REACT_APP_BACKEND_URI as string);
@@ -74,7 +76,7 @@ export const useChat = () => {
         const chatTitle = `Copilot @ ${new Date().toLocaleString()}`;
         try {
             await chatService
-                .createChatAsync(userId, chatTitle, await AuthHelper.getSKaaSAccessToken(instance, inProgress))
+                .createChatAsync(chatTitle, await AuthHelper.getSKaaSAccessToken(instance, inProgress))
                 .then((result: ICreateChatSessionResponse) => {
                     const newChat: ChatState = {
                         id: result.chatSession.id,
@@ -87,6 +89,7 @@ export const useChat = () => {
                         input: '',
                         botResponseStatus: undefined,
                         userDataLoaded: false,
+                        disabled: false,
                     };
 
                     dispatch(addConversation(newChat));
@@ -102,14 +105,6 @@ export const useChat = () => {
         const ask = {
             input: value,
             variables: [
-                {
-                    key: 'userId',
-                    value: userId,
-                },
-                {
-                    key: 'userName',
-                    value: fullName,
-                },
                 {
                     key: 'chatId',
                     value: chatId,
@@ -158,6 +153,10 @@ export const useChat = () => {
 
                     const chatUsers = await chatService.getAllChatParticipantsAsync(chatSession.id, accessToken);
 
+                    if (!features[FeatureKeys.MultiUserChat].enabled && chatUsers.length > 1) {
+                        continue;
+                    }
+
                     loadedConversations[chatSession.id] = {
                         id: chatSession.id,
                         title: chatSession.title,
@@ -169,6 +168,7 @@ export const useChat = () => {
                         input: '',
                         botResponseStatus: undefined,
                         userDataLoaded: false,
+                        disabled: false,
                     };
                 }
 
@@ -202,7 +202,7 @@ export const useChat = () => {
     const uploadBot = async (bot: Bot) => {
         try {
             const accessToken = await AuthHelper.getSKaaSAccessToken(instance, inProgress);
-            await botService.uploadAsync(bot, userId, accessToken).then(async (chatSession: IChatSession) => {
+            await botService.uploadAsync(bot, accessToken).then(async (chatSession: IChatSession) => {
                 const chatMessages = await chatService.getChatMessagesAsync(chatSession.id, 0, 100, accessToken);
 
                 const newChat = {
@@ -258,14 +258,28 @@ export const useChat = () => {
     const importDocument = async (chatId: string, files: File[]) => {
         try {
             await documentImportService.importDocumentAsync(
-                userId,
-                fullName,
                 chatId,
                 files,
+                features[FeatureKeys.AzureContentSafety].enabled,
                 await AuthHelper.getSKaaSAccessToken(instance, inProgress),
             );
         } catch (e: any) {
-            const errorMessage = `Failed to upload document. Details: ${getErrorDetails(e)}`;
+            let errorDetails = getErrorDetails(e);
+
+            // Disable Content Safety if request was unauthorized
+            const contentSafetyDisabledRegEx = /Access denied: \[Content Safety] Failed to analyze image./g;
+            if (contentSafetyDisabledRegEx.test(errorDetails)) {
+                if (features[FeatureKeys.AzureContentSafety].enabled) {
+                    errorDetails =
+                        'Unable to analyze image. Content Safety is currently disabled or unauthorized service-side. Please contact your admin to enable.';
+                }
+
+                dispatch(
+                    toggleFeatureState({ feature: FeatureKeys.AzureContentSafety, deactivate: true, enable: false }),
+                );
+            }
+
+            const errorMessage = `Failed to upload document(s). Details: ${errorDetails}`;
             dispatch(addAlert({ message: errorMessage, type: AlertType.Error }));
         }
     };
@@ -300,6 +314,7 @@ export const useChat = () => {
                     input: '',
                     botResponseStatus: undefined,
                     userDataLoaded: false,
+                    disabled: false,
                 };
 
                 dispatch(addConversation(newChat));
@@ -338,6 +353,32 @@ export const useChat = () => {
         }
     };
 
+    const deleteChat = async (chatId: string) => {
+        const friendlyChatName = getFriendlyChatName(conversations[chatId]);
+        await chatService
+            .deleteChatAsync(chatId, await AuthHelper.getSKaaSAccessToken(instance, inProgress))
+            .then(() => {
+                dispatch(deleteConversation(chatId));
+
+                // If there is only one chat left, create a new chat
+                if (Object.keys(conversations).length <= 1) {
+                    void createChat();
+                }
+            })
+            .catch((e: any) => {
+                const errorDetails = (e as Error).message.includes('Failed to delete resources for chat id')
+                    ? "Some or all resources associated with this chat couldn't be deleted. Please try again."
+                    : `Details: ${(e as Error).message}`;
+                dispatch(
+                    addAlert({
+                        message: `Unable to delete chat {${friendlyChatName}}. ${errorDetails}`,
+                        type: AlertType.Error,
+                        onRetry: () => void deleteChat(chatId),
+                    }),
+                );
+            });
+    };
+
     return {
         getChatUserById,
         createChat,
@@ -351,9 +392,31 @@ export const useChat = () => {
         joinChat,
         editChat,
         getServiceOptions,
+        deleteChat,
     };
 };
 
 function getErrorDetails(e: any) {
     return e instanceof Error ? e.message : String(e);
+}
+
+export function getFriendlyChatName(convo: ChatState): string {
+    const messages = convo.messages;
+
+    // Regex to match the Copilot timestamp format that is used as the default chat name.
+    // The format is: 'Copilot @ MM/DD/YYYY, hh:mm:ss AM/PM'.
+    const autoGeneratedTitleRegex =
+        /Copilot @ [0-9]{1,2}\/[0-9]{1,2}\/[0-9]{1,4}, [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} [A,P]M/;
+    const firstUserMessage = messages.find(
+        (message) => message.authorRole !== AuthorRoles.Bot && message.type === ChatMessageType.Message,
+    );
+
+    // If the chat title is the default Copilot timestamp, use the first user message as the title.
+    // If no user messages exist, use 'New Chat' as the title.
+    const friendlyTitle = autoGeneratedTitleRegex.test(convo.title)
+        ? firstUserMessage?.content ?? 'New Chat'
+        : convo.title;
+
+    // Truncate the title if it is too long
+    return friendlyTitle.length > 60 ? friendlyTitle.substring(0, 60) + '...' : friendlyTitle;
 }

@@ -1,27 +1,6 @@
 import { Body1, tokens } from '@fluentui/react-components';
 
 /*
- * Function to detect and convert URLs within a string into clickable links.
- * It wraps each link matched with anchor tags and applies safe href attributes.
- */
-export function convertToAnchorTags(htmlString: string) {
-    // Regular expression to match links, excluding any HTML tags at the end
-    // Since response from bot is plain text, sometimes line breaks and other html tags are included in the response for readability.
-    const linkRegex =
-        /(?:https?):\/\/(\w+:?\w*)?(\S+)(:\d+)?(\/|\/([\w#!:.?+=&%!\-/]))?(?=(<br|<p|<div|<span)\s*\/>|$)/g;
-
-    const result = htmlString.replace(linkRegex, function (link) {
-        // Parse URL first -- URL class handles cybersecurity concerns related to URL parsing and manipulation
-        const safeHref = new URL(link).toString();
-
-        // Replace each link with anchor tags
-        return `<a href="${safeHref}">${link}</a>`;
-    });
-
-    return result;
-}
-
-/*
  * Function to check if date is today.
  */
 export function isToday(date: Date) {
@@ -74,6 +53,7 @@ export function formatChatTextContent(messageContent: string) {
  */
 export function formatParagraphTextContent(messageContent: string) {
     messageContent = messageContent.replaceAll('\r\n', '\n\r');
+
     return (
         <Body1>
             {messageContent.split('\n').map((paragraph, idx) => (
@@ -85,7 +65,9 @@ export function formatParagraphTextContent(messageContent: string) {
                                   display: 'flex',
                                   marginLeft: tokens.spacingHorizontalL,
                               }
-                            : undefined
+                            : {
+                                  overflowWrap: 'anywhere',
+                              }
                     }
                 >
                     {paragraph}
